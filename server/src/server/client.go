@@ -11,7 +11,7 @@ type Client struct {
 	conn net.Conn
 	ip   string
 
-	status *Status
+	data *Data
 
 	statusCh chan Status
 	actionCh chan Action
@@ -20,20 +20,27 @@ type Client struct {
 	wait   *sync.WaitGroup
 }
 
+type Data struct {
+	status *Status
+	xF     float64
+	yF     float64
+}
+
 type Status struct {
-	speedX float64 //int32 from stream
-	speedY float64 //int32 from stream
+	speedX uint16 //uint16 from stream
+	speedY uint16 //uint16 from stream
 }
 
 type Action struct {
-	id byte //byte from stream
+	id    byte //byte from stream
+	value byte //byte from stream
 }
 
 func NewClient(conn net.Conn) *Client {
 	return &Client{
 		conn:     conn,
 		ip:       conn.RemoteAddr().String(),
-		status:   &Status{0, 0},
+		data:     &Data{status: &Status{}},
 		statusCh: make(chan Status, 256),
 		actionCh: make(chan Action, 64),
 		quitCh:   make(chan struct{}),
@@ -55,7 +62,7 @@ func (c *Client) Close() {
 
 func (c *Client) Recv() {
 	for {
-		msg, err := c.recv()
+		id, msg, err := c.recv()
 		if err != nil {
 			if err != io.EOF {
 				LogError("Client[%s] recv err:%v", c.ip, err)
@@ -64,6 +71,14 @@ func (c *Client) Recv() {
 			return
 		}
 		//decode
+		if isStatus(id) {
+			status := decodeStatus(msg)
+			c.statusCh <- status
+		} else {
+			action := decodeAction(msg)
+			action.id = id
+			c.actionCh <- action
+		}
 	}
 }
 
@@ -73,13 +88,14 @@ func (c *Client) Serve() {
 		select {
 		case st := <-c.statusCh:
 			//update status
-			c.status.speedX = st.speedX
-			c.status.speedY = st.speedY
+			c.data.status.speedX = st.speedX
+			c.data.status.speedY = st.speedY
 		case ac := <-c.actionCh:
 			//do action
+			doAction(ac)
 		case <-ticker.C:
 			//do status
-			//TODO 根据当前status的速度，刷新鼠标
+			doStatus(c.data)
 		case <-c.quitCh:
 			c.wait.Done()
 			return
