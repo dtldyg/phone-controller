@@ -14,7 +14,7 @@ func NewServer() *Server {
 
 //block
 func (s *Server) Start() {
-	addr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:1701")
+	addr, err := net.ResolveTCPAddr("tcp", ":1701")
 	if nil != err {
 		panic(err)
 	}
@@ -22,7 +22,7 @@ func (s *Server) Start() {
 	if nil != err {
 		panic(err)
 	}
-	LogInfo("Server listening at [%v]", addr)
+	LogInfo("Server listening at [%s]", getInnerIP())
 
 	for {
 		conn, err := l.AcceptTCP()
@@ -37,4 +37,17 @@ func (s *Server) Start() {
 			LogInfo("Client[%s] offline", c.ip)
 		}()
 	}
+}
+
+func getInnerIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, value := range addrs {
+		if ipnet, ok := value.(*net.IPNet); ok && ipnet.IP.IsGlobalUnicast() && ipnet.IP.To4() != nil {
+			return ipnet.IP.String()
+		}
+	}
+	return ""
 }
