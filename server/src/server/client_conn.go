@@ -5,7 +5,7 @@ import (
 )
 
 //recv a msg package, block
-func (c *Client) recv() (byte, []byte, error) {
+func (c *Client) read() (byte, []byte, error) {
 	id := byte(0)
 	if err := binary.Read(c.conn, binary.BigEndian, &id); err != nil {
 		return 0, nil, err

@@ -4,7 +4,6 @@ import (
 	"net"
 	"time"
 	"sync"
-	"io"
 )
 
 type Client struct {
@@ -27,8 +26,8 @@ type Data struct {
 }
 
 type Status struct {
-	speedX uint16 //uint16 from stream
-	speedY uint16 //uint16 from stream
+	speedX int16 //int16 from stream
+	speedY int16 //int16 from stream
 }
 
 type Action struct {
@@ -55,19 +54,11 @@ func (c *Client) Start() {
 	c.wait.Wait()
 }
 
-func (c *Client) Close() {
-	c.conn.Close()
-	close(c.quitCh)
-}
-
 func (c *Client) Recv() {
 	for {
-		id, msg, err := c.recv()
+		id, msg, err := c.read()
 		if err != nil {
-			if err != io.EOF {
-				LogError("Client[%s] recv err:%v", c.ip, err)
-			}
-			//TODO notify quit
+			close(c.quitCh)
 			return
 		}
 		//decode
@@ -91,13 +82,11 @@ func (c *Client) Serve() {
 			c.data.status.speedX = st.speedX
 			c.data.status.speedY = st.speedY
 		case ac := <-c.actionCh:
-			//do action
 			doAction(ac)
 		case <-ticker.C:
-			//do status
 			doStatus(c.data)
 		case <-c.quitCh:
-			c.wait.Done()
+			doQuit()
 			return
 		}
 	}

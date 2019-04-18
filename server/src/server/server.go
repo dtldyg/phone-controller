@@ -30,8 +30,11 @@ func (s *Server) Start() {
 			panic(err)
 		}
 		c := NewClient(conn)
+		LogInfo("Client[%s] online", c.ip)
+
 		go func() {
 			c.Start()
+			LogInfo("Client[%s] offline", c.ip)
 		}()
 	}
 }
