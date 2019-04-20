@@ -12,12 +12,18 @@ type Client struct {
 	ip      string
 
 	status *Status
+	mouse  *Mouse
 
 	statusCh chan Status
 	actionCh chan Action
 
 	quitCh chan struct{}
 	wait   *sync.WaitGroup
+}
+
+type Mouse struct {
+	leftDown  bool
+	rightDown bool
 }
 
 type Status struct {
@@ -35,6 +41,7 @@ func NewClient(conn net.Conn) *Client {
 		connTcp:  conn,
 		ip:       conn.RemoteAddr().String(),
 		status:   &Status{},
+		mouse:    &Mouse{},
 		statusCh: make(chan Status, 256),
 		actionCh: make(chan Action, 64),
 		quitCh:   make(chan struct{}),
@@ -100,7 +107,7 @@ func (c *Client) Serve() {
 			c.status.moveX += st.moveX
 			c.status.moveY += st.moveY
 		case ac := <-c.actionCh:
-			doAction(ac)
+			doAction(ac, c.mouse)
 		case <-ticker.C:
 			if c.status.moveX != 0 || c.status.moveY != 0 {
 				doStatus(c.status)
@@ -108,7 +115,7 @@ func (c *Client) Serve() {
 				c.status.moveY = 0
 			}
 		case <-c.quitCh:
-			doQuit()
+			doQuit(c.mouse)
 			return
 		}
 	}

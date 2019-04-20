@@ -2,7 +2,6 @@ package server
 
 import (
 	"github.com/go-vgo/robotgo"
-	"fmt"
 )
 
 const (
@@ -12,19 +11,22 @@ const (
 	MOUSE_UP    = "up"
 )
 
-func doAction(a Action) {
+func doAction(a Action, mouse *Mouse) {
 	switch a.id {
 	case 2:
-		fmt.Println(a.value)
 		//左键按下1 左键释放2 右键按下3 右键释放4
 		switch a.value {
 		case 1:
+			mouse.leftDown = true
 			robotgo.MouseToggle(MOUSE_DOWN, MOUSE_LEFT)
 		case 2:
+			mouse.leftDown = false
 			robotgo.MouseToggle(MOUSE_UP, MOUSE_LEFT)
 		case 3:
+			mouse.rightDown = true
 			robotgo.MouseToggle(MOUSE_DOWN, MOUSE_RIGHT)
 		case 4:
+			mouse.rightDown = false
 			robotgo.MouseToggle(MOUSE_UP, MOUSE_RIGHT)
 		}
 	case 3:
@@ -46,7 +48,11 @@ func doStatus(d *Status) {
 	robotgo.MoveMouse(x+int(d.moveX), y+int(d.moveY))
 }
 
-func doQuit() {
-	robotgo.MouseToggle(MOUSE_UP, MOUSE_LEFT)
-	robotgo.MouseToggle(MOUSE_UP, MOUSE_RIGHT)
+func doQuit(mouse *Mouse) {
+	if mouse.leftDown {
+		robotgo.MouseToggle(MOUSE_UP, MOUSE_LEFT)
+	}
+	if mouse.rightDown {
+		robotgo.MouseToggle(MOUSE_UP, MOUSE_RIGHT)
+	}
 }
