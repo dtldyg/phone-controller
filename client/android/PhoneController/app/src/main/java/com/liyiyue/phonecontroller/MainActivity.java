@@ -1,26 +1,40 @@
 package com.liyiyue.phonecontroller;
 
+import android.content.Context;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.MotionEvent;
+import android.view.WindowManager;
 import android.widget.TextView;
 
+import java.io.IOException;
 import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.util.concurrent.ArrayBlockingQueue;
 
 public class MainActivity extends AppCompatActivity {
 
-	public static int FrameMilli = 1000 / 20; // 1秒20次采样
-	public static int SquareLen = 10 * 10; // 阈值10像素
-	public static int Scale = 16; // 像素与向量的缩放比例
-	public static double N = 1.8; // 高次曲线n
+	public static int MilliPerFrame = 1000 / 30; // 1秒n次采样
+	public static int SquareLen = 1; // 阈值n像素以内认为是一个点
+	public static double Scale = 1; // 像素与向量的缩放比例
 
-	public Socket socket;
-	public OutputStream os;
+	public Socket socketTcp;
+	public OutputStream osTcp;
+	public DatagramSocket socketUdp;
+	public SocketAddress addressUdp;
 	public TextView text;
 
-	public ArrayBlockingQueue<double[]> queue = new ArrayBlockingQueue<>(128);
+	public int width;
+	public int heigh;
+
+	public ArrayBlockingQueue<Byte> queueAction = new ArrayBlockingQueue<>(128);
+	public ArrayBlockingQueue<double[]> queueStatus = new ArrayBlockingQueue<>(128);
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -28,14 +42,46 @@ public class MainActivity extends AppCompatActivity {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
 
-		//开网络线程
+		width = getScreenWidth(getApplicationContext());
+		heigh = getScreenHeight(getApplicationContext());
+
+		//开tcp线程
 		new Thread(new Runnable() {
 			@Override
 			public void run() {
 				//connect server
 				try {
-					socket = new Socket("192.168.199.122", 1701);
-					os = socket.getOutputStream();
+					socketTcp = new Socket("192.168.199.122", 1701);
+					osTcp = socketTcp.getOutputStream();
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				//start loop
+				while (true) {
+					try {
+						byte action = queueAction.take();
+						//build
+						byte[] b = new byte[2];
+						b[0] = 2; //id
+						b[1] = action;
+						osTcp.write(b);
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}
+			}
+		}).start();
+
+		//开udp线程
+		new Thread(new Runnable() {
+			@Override
+			public void run() {
+				//connect server
+				try {
+					socketUdp = new DatagramSocket();
+					addressUdp = new InetSocketAddress("192.168.199.122", 1702);
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
@@ -44,90 +90,145 @@ public class MainActivity extends AppCompatActivity {
 				long lastT = 0;
 				while (true) {
 					try {
-						double[] vector = queue.take();
+						double[] curP = queueStatus.take();
 						long curT = System.currentTimeMillis();
-						if ((vector[0] == 0 && vector[1] == 0) ||
-								(checkPoint(lastP, vector) && checkTime(lastT, curT))) {
-							//scale 1
-							vector[0] *= Scale;
-							vector[1] *= Scale;
-							//trim
-							if (vector[0] > 32700) {
-								vector[0] = 32700;
-							}
-							if (vector[0] < -32700) {
-								vector[0] = -32700;
-							}
-							if (vector[1] > 32700) {
-								vector[1] = 32700;
-							}
-							if (vector[1] < -32700) {
-								vector[1] = -32700;
-							}
-							//scale 2
-							double[] sign = new double[2];
-							sign[0] = vector[0] < 0 ? -1 : 1;
-							sign[1] = vector[1] < 0 ? -1 : 1;
-							vector[0] = Math.pow(Math.abs(vector[0]) / 32700, N) * 32700 * sign[0];
-							vector[1] = Math.pow(Math.abs(vector[1]) / 32700, N) * 32700 * sign[1];
-							//encode
+						if ((lastP[0] == 0 && lastP[1] == 0) || (curP[0] == 0 && curP[1] == 0)) {
+							lastP = curP;
+							continue;
+						}
+						short dx = (short) ((curP[0] - lastP[0]) * Scale);
+						short dy = (short) ((curP[1] - lastP[1]) * Scale);
+						if (checkPoint(dx, dy) && checkTime(lastT, curT)) {
+							//build
 							byte[] b = new byte[5];
 							b[0] = 1; //id
-							short x = (short) vector[0];
-							short y = (short) vector[1];
+							short x = dy;
+							short y = (short) (-dx);
 							b[1] = (byte) (x >> 8 & 0xff);
 							b[2] = (byte) (x & 0xff);
 							b[3] = (byte) (y >> 8 & 0xff);
 							b[4] = (byte) (y & 0xff);
 							//send
-							os.write(b);
-							os.flush();
-							//update
-							lastP = vector;
-							lastT = curT;
+							DatagramPacket pak = new DatagramPacket(b, 5, addressUdp);
+							socketUdp.send(pak);
+							//reset
+							lastP[0] += dx;
+							lastP[1] += dy;
 						}
-					} catch (Exception e) {
+					} catch (InterruptedException e) {
+						e.printStackTrace();
+					} catch (IOException e) {
 						e.printStackTrace();
 					}
 				}
 			}
 
 			//两点距离大于阈值
-			private boolean checkPoint(double[] last, double[] cur) {
-				return (Math.pow(last[0] - cur[0], 2) + Math.pow(last[1] - cur[1], 2)) > SquareLen;
+			private boolean checkPoint(short dx, short dy) {
+				return (Math.pow(dx, 2) + Math.pow(dy, 2)) >= SquareLen;
 			}
 
-			//两点距离大于阈值
+			//采样间隔大于阈值
 			private boolean checkTime(long last, long cur) {
-				return cur - last >= FrameMilli;
+				return cur - last >= MilliPerFrame;
 			}
 		}).start();
 	}
 
-	public double startX = 0;
-	public double startY = 0;
+	int leftKey = -1;
+	int rightKey = -1;
+	int moveKey = -1;
 
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
-		//屏幕左上角是 {0, 0}
 		try {
-			switch (event.getAction()) {
+			int id = event.getPointerId(event.getActionIndex());
+			switch (event.getActionMasked()) {
 				case MotionEvent.ACTION_DOWN:
-					startX = event.getX();
-					startY = event.getY();
+					down(event, id);
+					break;
+				case MotionEvent.ACTION_POINTER_DOWN:
+					down(event, id);
 					break;
 				case MotionEvent.ACTION_MOVE:
-					double curX = event.getX();
-					double curY = event.getY();
-					queue.put(new double[]{curY - startY, curX - startX});
+					move(event, id);
 					break;
 				case MotionEvent.ACTION_UP:
-					queue.put(new double[]{0, 0});
+					up(event, id);
+					break;
+				case MotionEvent.ACTION_POINTER_UP:
+					up(event, id);
 					break;
 			}
-		} catch (Exception e) {
+		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		return super.onTouchEvent(event);
+		return true;
+	}
+
+	public void down(MotionEvent event, int id) throws InterruptedException {
+		System.out.printf("down idx[%d], id[%d]\n", event.getActionIndex(), event.getPointerId(event.getActionIndex()));
+		double x = event.getX(id);
+		double y = event.getY(id);
+		if (x > width / 2 && y > heigh / 2 && leftKey == -1) {
+			//左键按下
+			leftKey = id;
+			queueAction.put((byte) 1);
+		} else if (x < width / 2 && y > heigh / 2 && rightKey == -1) {
+			//右键按下
+			rightKey = id;
+			queueAction.put((byte) 3);
+		} else if (y < heigh / 2 && moveKey == -1) {
+//			System.out.printf("down id[%d] pos[%f, %f]\n", id, x, y);
+			moveKey = id;
+		}
+	}
+
+	public void move(MotionEvent event, int id) throws InterruptedException {
+//		System.out.printf("move idx[%d], id[%d]\n", event.getActionIndex(), event.getPointerId(event.getActionIndex()));
+		if (moveKey > -1) {
+			queueStatus.put(new double[]{event.getX(moveKey), event.getY(moveKey)});
+		}
+	}
+
+	public void up(MotionEvent event, int id) throws InterruptedException {
+		if (moveKey > -1 && id == moveKey) {
+			moveKey = -1;
+			queueStatus.put(new double[]{0, 0});
+		} else if (leftKey > -1 && id == leftKey) {
+			//左键释放
+			leftKey = -1;
+			queueAction.put((byte) 2);
+		} else if (rightKey > -1 && id == rightKey) {
+			//右键释放
+			rightKey = -1;
+			queueAction.put((byte) 4);
+		}
+	}
+
+	/**
+	 * 获取屏幕的宽
+	 *
+	 * @param context
+	 * @return
+	 */
+	public static int getScreenWidth(Context context) {
+		WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+		DisplayMetrics dm = new DisplayMetrics();
+		wm.getDefaultDisplay().getMetrics(dm);
+		return dm.widthPixels;
+	}
+
+	/**
+	 * 获取屏幕的高度
+	 *
+	 * @param context
+	 * @return
+	 */
+	public static int getScreenHeight(Context context) {
+		WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+		DisplayMetrics dm = new DisplayMetrics();
+		wm.getDefaultDisplay().getMetrics(dm);
+		return dm.heightPixels;
 	}
 }

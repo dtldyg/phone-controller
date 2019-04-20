@@ -7,10 +7,11 @@ import (
 )
 
 type Client struct {
-	conn net.Conn
-	ip   string
+	connTcp net.Conn
+	connUdp *net.UDPConn
+	ip      string
 
-	data *Data
+	status *Status
 
 	statusCh chan Status
 	actionCh chan Action
@@ -19,15 +20,9 @@ type Client struct {
 	wait   *sync.WaitGroup
 }
 
-type Data struct {
-	status *Status
-	xF     float64
-	yF     float64
-}
-
 type Status struct {
-	speedX int16 //int16 from stream
-	speedY int16 //int16 from stream
+	moveX int16 //int16 from stream
+	moveY int16 //int16 from stream
 }
 
 type Action struct {
@@ -37,9 +32,9 @@ type Action struct {
 
 func NewClient(conn net.Conn) *Client {
 	return &Client{
-		conn:     conn,
+		connTcp:  conn,
 		ip:       conn.RemoteAddr().String(),
-		data:     &Data{status: &Status{}},
+		status:   &Status{},
 		statusCh: make(chan Status, 256),
 		actionCh: make(chan Action, 64),
 		quitCh:   make(chan struct{}),
@@ -49,27 +44,50 @@ func NewClient(conn net.Conn) *Client {
 
 //run client, block
 func (c *Client) Start() {
-	RunGo(c.wait, c.Recv)
+	addr, err := net.ResolveUDPAddr("udp", ":1702")
+	if nil != err {
+		panic(err)
+	}
+	c.connUdp, err = net.ListenUDP("udp", addr)
+	if nil != err {
+		panic(err)
+	}
+	RunGo(c.wait, c.RecvTcp)
+	RunGo(c.wait, c.RecvUdp)
 	RunGo(c.wait, c.Serve)
 	c.wait.Wait()
 }
 
-func (c *Client) Recv() {
+func (c *Client) RecvTcp() {
 	for {
-		id, msg, err := c.read()
+		id, msg, err := c.readTcp()
 		if err != nil {
 			close(c.quitCh)
+			c.connUdp.Close()
 			return
 		}
-		//decode
-		if isStatus(id) {
-			status := decodeStatus(msg)
-			c.statusCh <- status
-		} else {
-			action := decodeAction(msg)
-			action.id = id
-			c.actionCh <- action
+		c.dispatch(id, msg)
+	}
+}
+
+func (c *Client) RecvUdp() {
+	for {
+		id, msg, err := c.readUdp()
+		if err != nil {
+			return
 		}
+		c.dispatch(id, msg)
+	}
+}
+
+func (c *Client) dispatch(id byte, msg []byte) {
+	if isStatus(id) {
+		status := decodeStatus(msg)
+		c.statusCh <- status
+	} else {
+		action := decodeAction(msg)
+		action.id = id
+		c.actionCh <- action
 	}
 }
 
@@ -79,12 +97,16 @@ func (c *Client) Serve() {
 		select {
 		case st := <-c.statusCh:
 			//update status
-			c.data.status.speedX = st.speedX
-			c.data.status.speedY = st.speedY
+			c.status.moveX += st.moveX
+			c.status.moveY += st.moveY
 		case ac := <-c.actionCh:
 			doAction(ac)
 		case <-ticker.C:
-			doStatus(c.data)
+			if c.status.moveX != 0 || c.status.moveY != 0 {
+				doStatus(c.status)
+				c.status.moveX = 0
+				c.status.moveY = 0
+			}
 		case <-c.quitCh:
 			doQuit()
 			return

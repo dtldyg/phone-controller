@@ -21,8 +21,8 @@ func isStatus(id byte) bool {
 
 func decodeStatus(msg []byte) Status {
 	return Status{
-		speedX: int16(binary.BigEndian.Uint16(msg[:2])),
-		speedY: int16(binary.BigEndian.Uint16(msg[2:])),
+		moveX: int16(binary.BigEndian.Uint16(msg[:2])),
+		moveY: int16(binary.BigEndian.Uint16(msg[2:])),
 	}
 }
 
