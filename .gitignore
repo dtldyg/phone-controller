@@ -1,5 +1,6 @@
 #server ide
 server/.idea/*
+server/src/*.exe
 
 #client ide
 client/golang/.idea/*
