@@ -4,7 +4,6 @@ import android.content.Context;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
-import android.util.Log;
 import android.view.MotionEvent;
 import android.view.WindowManager;
 import android.widget.TextView;
@@ -32,18 +31,20 @@ public class MainActivity extends AppCompatActivity {
 
 	public int width;
 	public int heigh;
+	public int scrollBarWidth;
 
 	public ArrayBlockingQueue<Byte> queueAction = new ArrayBlockingQueue<>(128);
 	public ArrayBlockingQueue<double[]> queueStatus = new ArrayBlockingQueue<>(128);
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
-		text = (TextView) findViewById(R.id.text);
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
+		text = (TextView) findViewById(R.id.text);
 
 		width = getScreenWidth(getApplicationContext());
 		heigh = getScreenHeight(getApplicationContext());
+		scrollBarWidth = getResources().getDimensionPixelSize(R.dimen.scroll_bar);
 
 		//开tcp线程
 		new Thread(new Runnable() {
@@ -102,8 +103,8 @@ public class MainActivity extends AppCompatActivity {
 							//build
 							byte[] b = new byte[5];
 							b[0] = 1; //id
-							short x = dy;
-							short y = (short) (-dx);
+							short x = dx;
+							short y = dy;
 							b[1] = (byte) (x >> 8 & 0xff);
 							b[2] = (byte) (x & 0xff);
 							b[3] = (byte) (y >> 8 & 0xff);
@@ -167,25 +168,24 @@ public class MainActivity extends AppCompatActivity {
 	}
 
 	public void down(MotionEvent event, int id) throws InterruptedException {
-		System.out.printf("down idx[%d], id[%d]\n", event.getActionIndex(), event.getPointerId(event.getActionIndex()));
 		double x = event.getX(id);
 		double y = event.getY(id);
-		if (x > width / 2 && y > heigh / 2 && leftKey == -1) {
+		System.out.println(x + "," + y);
+		System.out.println(width + "," + heigh + "," + scrollBarWidth);
+		if (x > width / 2 && x < width - scrollBarWidth && y < heigh / 2 && leftKey == -1) {
 			//左键按下
 			leftKey = id;
 			queueAction.put((byte) 1);
-		} else if (x < width / 2 && y > heigh / 2 && rightKey == -1) {
+		} else if (x > width / 2 && x < width - scrollBarWidth && y > heigh / 2 && rightKey == -1) {
 			//右键按下
 			rightKey = id;
 			queueAction.put((byte) 3);
-		} else if (y < heigh / 2 && moveKey == -1) {
-//			System.out.printf("down id[%d] pos[%f, %f]\n", id, x, y);
+		} else if (x < width / 2 && moveKey == -1) {
 			moveKey = id;
 		}
 	}
 
 	public void move(MotionEvent event, int id) throws InterruptedException {
-//		System.out.printf("move idx[%d], id[%d]\n", event.getActionIndex(), event.getPointerId(event.getActionIndex()));
 		if (moveKey > -1) {
 			queueStatus.put(new double[]{event.getX(moveKey), event.getY(moveKey)});
 		}
