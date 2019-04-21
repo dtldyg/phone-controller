@@ -70,12 +70,20 @@
         </LinearLayout>
 
         <!-- 滚轮 -->
-        <LinearLayout
+        <RelativeLayout
             android:layout_width="@dimen/scroll_bar"
             android:layout_height="match_parent"
             android:background="@drawable/white_line_left"
             android:orientation="vertical">
-        </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerInParent="true"
+                android:text="↑\n\n\n↓"
+                android:textColor="@color/colorWhite"
+                android:textSize="@dimen/text_size"/>
+        </RelativeLayout>
     </LinearLayout>
 
 </LinearLayout>

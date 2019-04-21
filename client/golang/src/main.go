@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	udp()
+	udpBroadcast()
 }
 
 func udp() {
@@ -57,5 +57,17 @@ func tcp() {
 		if err != nil {
 			panic(err)
 		}
+	}
+}
+
+func udpBroadcast() {
+	conn, err := net.Dial("udp", "255.255.255.255:1702")
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = conn.Write([]byte("detect"))
+	if err != nil {
+		panic(err)
 	}
 }

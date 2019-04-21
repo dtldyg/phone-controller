@@ -28,11 +28,12 @@ public class MainActivity extends AppCompatActivity {
 	public OutputStream osTcp;
 	public DatagramSocket socketUdp;
 	public SocketAddress addressUdp;
-	public TextView text;
 
 	public int width;
 	public int heigh;
 	public int scrollBarWidth;
+
+	public String ip = "192.168.199.122";
 
 	public ArrayBlockingQueue<byte[]> queueAction = new ArrayBlockingQueue<>(128);
 	public ArrayBlockingQueue<double[]> queueStatus = new ArrayBlockingQueue<>(128);
@@ -41,7 +42,8 @@ public class MainActivity extends AppCompatActivity {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_main);
-		text = (TextView) findViewById(R.id.text);
+
+		ip = getIntent().getStringExtra("ip");
 
 		width = getScreenWidth(getApplicationContext());
 		heigh = getScreenHeight(getApplicationContext());
@@ -53,7 +55,7 @@ public class MainActivity extends AppCompatActivity {
 			public void run() {
 				//connect server
 				try {
-					socketTcp = new Socket("192.168.199.122", 1701);
+					socketTcp = new Socket(ip, 1701);
 					osTcp = socketTcp.getOutputStream();
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -83,7 +85,7 @@ public class MainActivity extends AppCompatActivity {
 				//connect server
 				try {
 					socketUdp = new DatagramSocket();
-					addressUdp = new InetSocketAddress("192.168.199.122", 1702);
+					addressUdp = new InetSocketAddress(ip, 1702);
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
