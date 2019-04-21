@@ -37,8 +37,8 @@ func doAction(a Action, mouse *Mouse) {
 }
 
 func getScroll(a Action) (int, string) {
-	if a.value < 0 {
-		return -int(a.value), MOUSE_UP
+	if a.value&0x80 > 0 {
+		return int(a.value & 0x7f), MOUSE_UP
 	}
 	return int(a.value), MOUSE_DOWN
 }

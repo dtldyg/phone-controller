@@ -22,6 +22,7 @@ public class MainActivity extends AppCompatActivity {
 	public static int MilliPerFrame = 1000 / 30; // 1秒n次采样
 	public static int SquareLen = 1; // 阈值n像素以内认为是一个点
 	public static double Scale = 1; // 像素与向量的缩放比例
+	public static double ScrollLen = 50; // 滚动多少像素触发一次
 
 	public Socket socketTcp;
 	public OutputStream osTcp;
@@ -33,7 +34,7 @@ public class MainActivity extends AppCompatActivity {
 	public int heigh;
 	public int scrollBarWidth;
 
-	public ArrayBlockingQueue<Byte> queueAction = new ArrayBlockingQueue<>(128);
+	public ArrayBlockingQueue<byte[]> queueAction = new ArrayBlockingQueue<>(128);
 	public ArrayBlockingQueue<double[]> queueStatus = new ArrayBlockingQueue<>(128);
 
 	@Override
@@ -60,11 +61,11 @@ public class MainActivity extends AppCompatActivity {
 				//start loop
 				while (true) {
 					try {
-						byte action = queueAction.take();
+						byte[] action = queueAction.take();
 						//build
 						byte[] b = new byte[2];
-						b[0] = 2; //id
-						b[1] = action;
+						b[0] = action[0]; //id
+						b[1] = action[1]; //value
 						osTcp.write(b);
 					} catch (InterruptedException e) {
 						e.printStackTrace();
@@ -139,6 +140,8 @@ public class MainActivity extends AppCompatActivity {
 	int leftKey = -1;
 	int rightKey = -1;
 	int moveKey = -1;
+	int scrollKey = -1;
+	int lastScrollIdx = -1;
 
 	@Override
 	public boolean onTouchEvent(MotionEvent event) {
@@ -175,13 +178,16 @@ public class MainActivity extends AppCompatActivity {
 		if (x > width / 2 && x < width - scrollBarWidth && y < heigh / 2 && leftKey == -1) {
 			//左键按下
 			leftKey = id;
-			queueAction.put((byte) 1);
+			queueAction.put(new byte[]{2, 1});
 		} else if (x > width / 2 && x < width - scrollBarWidth && y > heigh / 2 && rightKey == -1) {
 			//右键按下
 			rightKey = id;
-			queueAction.put((byte) 3);
+			queueAction.put(new byte[]{2, 3});
 		} else if (x < width / 2 && moveKey == -1) {
 			moveKey = id;
+		} else if (x > width - scrollBarWidth && scrollKey == -1) {
+			lastScrollIdx = (int) (y / ScrollLen);
+			scrollKey = id;
 		}
 	}
 
@@ -189,29 +195,41 @@ public class MainActivity extends AppCompatActivity {
 		if (moveKey > -1) {
 			queueStatus.put(new double[]{event.getX(moveKey), event.getY(moveKey)});
 		}
+		if (scrollKey > -1) {
+			try {
+				int newScrollIdx = (int) (event.getY(scrollKey) / ScrollLen);
+				if (newScrollIdx != lastScrollIdx) {
+					int move = newScrollIdx - lastScrollIdx;
+					if (move < 0) {
+						move = (-move) | 0x80;
+					}
+					queueAction.put(new byte[]{3, (byte) (move)});
+					lastScrollIdx = newScrollIdx;
+				}
+			} catch (Exception e) {
+			}
+		}
 	}
 
 	public void up(MotionEvent event, int id) throws InterruptedException {
 		if (moveKey > -1 && id == moveKey) {
+			//停止移动
 			moveKey = -1;
 			queueStatus.put(new double[]{0, 0});
 		} else if (leftKey > -1 && id == leftKey) {
 			//左键释放
 			leftKey = -1;
-			queueAction.put((byte) 2);
+			queueAction.put(new byte[]{2, 2});
 		} else if (rightKey > -1 && id == rightKey) {
 			//右键释放
 			rightKey = -1;
-			queueAction.put((byte) 4);
+			queueAction.put(new byte[]{2, 4});
+		} else if (scrollKey > -1 && id == scrollKey) {
+			//停止滚轮
+			scrollKey = -1;
 		}
 	}
 
-	/**
-	 * 获取屏幕的宽
-	 *
-	 * @param context
-	 * @return
-	 */
 	public static int getScreenWidth(Context context) {
 		WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
 		DisplayMetrics dm = new DisplayMetrics();
@@ -219,12 +237,6 @@ public class MainActivity extends AppCompatActivity {
 		return dm.widthPixels;
 	}
 
-	/**
-	 * 获取屏幕的高度
-	 *
-	 * @param context
-	 * @return
-	 */
 	public static int getScreenHeight(Context context) {
 		WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
 		DisplayMetrics dm = new DisplayMetrics();
